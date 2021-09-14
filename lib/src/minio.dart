@@ -451,7 +451,10 @@ class Minio {
     validate(resp);
 
     final node = xml.XmlDocument.parse(resp.body);
-    return ListMultipartUploadsOutput.fromXml(node.root as XmlElement);
+    var xmlnode = node.rootElement as xml.XmlElement;
+    //throw ("bruh");
+    return ListMultipartUploadsOutput.fromXml(xmlnode);
+    //return (ListMultipartUploadsOutput.fromXml(new xml.XmlElement(new xml.XmlName("hello"))));
   }
 
   /// Listen for notifications on a bucket. Additionally one can provider
@@ -667,6 +670,7 @@ class Minio {
       final result = await listPartsQuery(bucket, object, uploadId, marker);
       marker = result.nextPartNumberMarker;
       isTruncated = result.isTruncated;
+      //yield* Stream.fromIterable(result.parts).asBroadcastStream();
       yield* Stream.fromIterable(result.parts);
     } while (isTruncated);
   }
@@ -694,7 +698,8 @@ class Minio {
     validate(resp);
 
     final node = xml.XmlDocument.parse(resp.body);
-    return ListPartsOutput.fromXml(node.root as XmlElement);
+    //var xmlnode = node.root;
+    return ListPartsOutput.fromXml(node.rootElement as XmlElement);
   }
 
   /// Creates the bucket [bucket].
@@ -893,6 +898,45 @@ class Minio {
     return etag.toString();
   }
 
+  Future<String> putPart(
+    String bucket,
+    String object,
+    String uploadId,
+    int? _partSize,
+    int partNumber,
+    Stream<List<int>> data, {
+    int? size,
+    Map<String, String>? metadata,
+  }) async {
+    MinioInvalidBucketNameError.check(bucket);
+    MinioInvalidObjectNameError.check(object);
+
+    assert(size == null || size >= 0);
+
+    metadata = prependXAMZMeta(metadata ?? <String, String>{});
+
+    size ??= maxObjectSize;
+    //final partSize = _partSize!;
+    //final partSize = _calculatePartSize(size);
+
+    //final chunker = BlockStream(partSize);
+    final uploader = MinioCustomUploader(
+      this,
+      _client,
+      bucket,
+      object,
+      _partSize!,
+      partNumber,
+      metadata,
+      uploadId,
+    );
+    //final etag = await data.transform(chunker).pipe(uploader); //ORIGINAL CODE
+    //We already transformed the data, ignore the chunker
+    final etag = await data.pipe(uploader);
+
+    return etag.toString();
+  }
+
   /// Remove all bucket notification
   Future<void> removeAllBucketNotification(String bucket) async {
     await setBucketNotification(
@@ -918,8 +962,25 @@ class Minio {
   Future<void> removeIncompleteUpload(String bucket, String object) async {
     MinioInvalidBucketNameError.check(bucket);
     MinioInvalidObjectNameError.check(object);
-
     final uploadId = await findUploadId(bucket, object);
+    if (uploadId == null) return;
+
+    final resp = await _client.request(
+      method: 'DELETE',
+      bucket: bucket,
+      object: object,
+      queries: {'uploadId': uploadId},
+    );
+
+    validate(resp, expect: 204);
+  }
+
+  /// Remove the partially uploaded object by ID.
+  Future<void> removeIncompleteUploadById(
+      String bucket, String object, String? _uploadId) async {
+    MinioInvalidBucketNameError.check(bucket);
+    MinioInvalidObjectNameError.check(object);
+    final uploadId = _uploadId ?? await findUploadId(bucket, object);
     if (uploadId == null) return;
 
     final resp = await _client.request(

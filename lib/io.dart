@@ -37,6 +37,42 @@ extension MinioX on Minio {
     );
   }
 
+  Future<String> fPutPart(
+    String bucket,
+    String object,
+    String uploadId,
+    int partSize,
+    int partNumber,
+    String filePath, [
+    Map<String, String>? metadata,
+  ]) async {
+    MinioInvalidBucketNameError.check(bucket);
+    MinioInvalidObjectNameError.check(object);
+
+    metadata ??= {};
+    metadata = insertContentType(metadata, filePath);
+    metadata = prependXAMZMeta(metadata);
+
+    final file = File(filePath);
+    final stat = await file.stat();
+    if (stat.size > maxObjectSize) {
+      throw MinioError(
+        '$filePath size : ${stat.size}, max allowed size : 5TB',
+      );
+    }
+
+    return putPart(
+      bucket,
+      object,
+      uploadId,
+      partSize,
+      partNumber,
+      file.openRead(),
+      size: stat.size,
+      metadata: metadata,
+    );
+  }
+
   /// Downloads and saves the object as a file in the local filesystem.
   Future<void> fGetObject(
     String bucket,
