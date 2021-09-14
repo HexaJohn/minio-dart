@@ -170,12 +170,13 @@ class MinioCustomUploader implements StreamConsumer<List<int>> {
       }
 
       ///Custom Uploader assumes that a part is being uploaded
-/*
-      if (this.partNumber == 1 && chunk.length < partSize) {
+
+      //if (this.partNumber == 1 && chunk.length < partSize) {
+      if (chunk.length < partSize) {
         this.etag = await upload(chunk, headers, null);
         return;
       }
-*/
+
       if (uploadId == null) {
         await initMultipartUpload();
       }
