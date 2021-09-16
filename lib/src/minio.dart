@@ -44,7 +44,7 @@ class Minio {
   }
 
   /// default part size for multipart uploads.
-  final partSize = 64 * 1024 * 1024;
+  final partSize = 256 * 1024 * 1024;
 
   /// maximum part size for multipart uploads.
   final maximumPartSize = 5 * 1024 * 1024 * 1024;
@@ -133,6 +133,38 @@ class Minio {
   /// Complete the multipart upload. After all the parts are uploaded issuing
   /// this call will aggregate the parts on the server into a single object.
   Future<String> completeMultipartUpload(
+    String bucket,
+    String object,
+    String uploadId,
+    List<CompletedPart> parts,
+  ) async {
+    MinioInvalidBucketNameError.check(bucket);
+    MinioInvalidObjectNameError.check(object);
+
+    var queries = {'uploadId': uploadId};
+    var payload = CompleteMultipartUpload(parts).toXml().toString();
+
+    final resp = await _client.request(
+      method: 'POST',
+      bucket: bucket,
+      object: object,
+      queries: queries,
+      payload: payload,
+    );
+    validate(resp, expect: 200);
+
+    final node = xml.XmlDocument.parse(resp.body);
+    final errorNode = node.findAllElements('Error');
+    if (errorNode.isNotEmpty) {
+      final error = Error.fromXml(errorNode.first);
+      throw MinioS3Error(error.message, error, resp);
+    }
+
+    final etag = node.findAllElements('ETag').first.text;
+    return etag;
+  }
+
+  Future<String> completeMultipartUploadManual(
     String bucket,
     String object,
     String uploadId,
@@ -919,7 +951,7 @@ class Minio {
     //final partSize = _partSize!;
     //final partSize = _calculatePartSize(size);
 
-    //final chunker = BlockStream(partSize);
+    final chunker = BlockStream(partSize);
     final uploader = MinioCustomUploader(
       this,
       _client,
@@ -930,9 +962,10 @@ class Minio {
       metadata,
       uploadId,
     );
-    //final etag = await data.transform(chunker).pipe(uploader); //ORIGINAL CODE
+    final etag = await data.transform(chunker).pipe(uploader); //ORIGINAL CODE
     //We already transformed the data, ignore the chunker
-    final etag = await data.pipe(uploader);
+    //final etag = await data.pipe(uploader);
+    print("Minio eTag: $etag");
 
     return etag.toString();
   }
