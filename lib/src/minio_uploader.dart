@@ -151,7 +151,6 @@ class MinioCustomUploader implements StreamConsumer<List<int>> {
   final int partNumber;
   final Map<String, String> metadata;
 
-  //var partNumber = 1;
   String? etag;
   List<CompletedPart> parts = [];
   Map<int?, Part>? oldParts;
@@ -169,16 +168,13 @@ class MinioCustomUploader implements StreamConsumer<List<int>> {
         headers['Content-MD5'] = base64.encode(md5digest);
       }
 
-      ///Custom Uploader assumes that a part is being uploaded
-
-      //if (this.partNumber == 1 && chunk.length < partSize) {
-      if (chunk.length < partSize) {
+      if (this.partNumber == 1 && chunk.length < partSize) {
         this.etag = await upload(chunk, headers, null);
         return;
       }
 
       if (uploadId == null) {
-        await initMultipartUpload();
+        //await initMultipartUpload();
       }
 
       //final partNumber = this.partNumber++;
@@ -199,17 +195,23 @@ class MinioCustomUploader implements StreamConsumer<List<int>> {
         'partNumber': '$partNumber',
         'uploadId': uploadId,
       };
+      print("Minio Upload Queries: ${queries.toString()}");
 
-      final etag = await upload(chunk, headers, queries);
+      this.etag = await upload(chunk, headers, queries);
+      print("Minio Query Response eTag: $etag");
+
       final part = CompletedPart(etag, partNumber);
       parts.add(part);
+      return (etag);
     }
   }
 
   @override
   Future<String?> close() async {
-    if (uploadId == null) return etag;
-    return minio.completeMultipartUpload(bucket, object, uploadId!, parts);
+    print('Minio Stream Closed: Final eTag is $etag');
+    return etag;
+    //return minio.completeMultipartUpload(bucket, object, uploadId!, parts);
+    //TODO: Automatic Close multipart
   }
 
   Map<String, String> getHeaders(List<int> chunk) {
@@ -239,11 +241,11 @@ class MinioCustomUploader implements StreamConsumer<List<int>> {
 
     validate(resp);
 
-    var etag = resp.headers['etag'];
+    this.etag = resp.headers['etag'];
     if (etag != null) {
-      etag = trimDoubleQuote(etag);
+      etag = trimDoubleQuote(etag!);
     }
-
+    print('Minio Upload Method eTag: $etag');
     return etag;
   }
 
@@ -251,11 +253,11 @@ class MinioCustomUploader implements StreamConsumer<List<int>> {
     //FIXME: this code still causes Signature Error
     //FIXME: https://github.com/xtyxtyx/minio-dart/issues/7
     //TODO: uncomment when fixed
-    uploadId = await minio.findUploadId(bucket, object);
+    // uploadId = await minio.findUploadId(bucket, object);
 
     if (uploadId == null) {
-      uploadId =
-          await minio.initiateNewMultipartUpload(bucket, object, metadata);
+      uploadId = null;
+      //await minio.initiateNewMultipartUpload(bucket, object, metadata);
       return;
     }
 
